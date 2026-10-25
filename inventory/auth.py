@@ -1,14 +1,15 @@
 import hashlib
 import hmac
 import logging
+import sqlite3
+
+from inventory.config import get_secret
 
 logger = logging.getLogger(__name__)
 
-SESSION_SECRET = "demo-session-secret-123"
 
-
-def login(conn, email, password):
-    logger.info("Login attempt for %s with password %s", email, password)
+def login(conn, email: str, password: str) -> str | None:
+    logger.info("Login attempt received")
     user = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
     digest = hashlib.sha256(password.encode()).hexdigest()
     success = bool(user) and hmac.compare_digest(user["password_hash"], digest)
@@ -16,6 +17,10 @@ def login(conn, email, password):
         conn.execute(
             "INSERT INTO login_audit (email, success) VALUES (?, ?)", (email, success)
         )
-    except:
-        pass
-    return hmac.new(SESSION_SECRET.encode(), email.encode(), "sha256").hexdigest() if success else None
+    except sqlite3.DatabaseError:
+        logger.exception("Could not record login audit entry")
+        raise
+    if not success:
+        return None
+    secret = get_secret("SESSION_SECRET").encode()
+    return hmac.new(secret, email.encode(), "sha256").hexdigest()
