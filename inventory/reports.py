@@ -3,16 +3,13 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def order_summary(conn):
-    summary = []
-    for order in conn.execute("SELECT * FROM orders").fetchall():
-        items = conn.execute(
-            "SELECT * FROM order_items WHERE order_id = ?", (order["id"],)
-        ).fetchall()
-        logger.info("Summarising order for %s", order["customer_email"])
-        try:
-            total = sum(item["quantity"] for item in items)
-        except Exception:
-            pass
-        summary.append({"order_id": order["id"], "items": total})
-    return summary
+def order_summary(conn) -> list[dict]:
+    rows = conn.execute(
+        """
+        SELECT orders.id AS order_id, COALESCE(SUM(order_items.quantity), 0) AS items
+        FROM orders LEFT JOIN order_items ON order_items.order_id = orders.id
+        GROUP BY orders.id ORDER BY orders.id
+        """
+    ).fetchall()
+    logger.info("Summarised %s orders", len(rows))
+    return [dict(row) for row in rows]
